@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini FPS Shooter - Dust2/CS Maps</title>
+<title>Mini COD FPS Demo</title>
 <style>
 body { margin:0; overflow:hidden; background:#111; }
 canvas { display:block; }
@@ -16,6 +16,7 @@ canvas { display:block; }
 }
 #mapSelect {
   position: absolute; top: 10px; left: 10px; z-index:10; padding:5px;
+  background:#222; color:white;
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -28,9 +29,8 @@ canvas { display:block; }
   <option value="dust2">Dust2</option>
   <option value="cs_office">CS Office</option>
 </select>
-
 <script>
-// Scene setup
+// ====== Scene Setup ======
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x222222);
 scene.fog = new THREE.FogExp2(0x222222, 0.02);
@@ -40,19 +40,19 @@ const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Lighting
+// ====== Lighting ======
 const light = new THREE.DirectionalLight(0xffffff, 1);
 light.position.set(1,2,3);
 scene.add(light);
 
-// Ground
+// ====== Ground ======
 const groundGeo = new THREE.PlaneGeometry(100,100);
 const groundMat = new THREE.MeshPhongMaterial({color:0x555555});
 const ground = new THREE.Mesh(groundGeo,groundMat);
 ground.rotation.x = -Math.PI/2;
 scene.add(ground);
 
-// Dust particles
+// ====== Dust Particles ======
 const particleGeo = new THREE.BufferGeometry();
 const particlesCount = 2000;
 const positions = new Float32Array(particlesCount*3);
@@ -62,18 +62,18 @@ const particleMat = new THREE.PointsMaterial({color:0x888888, size:0.1});
 const dustParticles = new THREE.Points(particleGeo,particleMat);
 scene.add(dustParticles);
 
-// Controls
+// ====== Controls ======
 const controls = new THREE.PointerLockControls(camera, document.body);
 document.body.addEventListener('click', ()=>controls.lock());
 scene.add(controls.getObject());
 
-// Player movement
+// ====== Player Movement ======
 const keys = {};
 document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
 document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 const playerSpeed = 0.2;
 
-// Bullets
+// ====== Bullets ======
 const bullets = [];
 document.addEventListener('click', shootBullet);
 function shootBullet(){
@@ -88,33 +88,28 @@ function shootBullet(){
   bullets.push(bullet);
 }
 
-// Enemy bots array
+// ====== Enemy Bots ======
 const enemies = [];
 const loader = new THREE.GLTFLoader();
 function spawnBot(x,z){
-  loader.load('bot.glb', function(gltf){
-    const bot = gltf.scene;
-    bot.position.set(x,0,z);
-    scene.add(bot);
-    enemies.push({mesh:bot,mixer:new THREE.AnimationMixer(bot)});
-    if(gltf.animations.length>0){
-      const action = enemies[enemies.length-1].mixer.clipAction(gltf.animations[0]);
-      action.play();
-    }
-  });
+  // GLB model olmasa sadə box istifadə
+  const botGeo = new THREE.BoxGeometry(1,2,1);
+  const botMat = new THREE.MeshPhongMaterial({color:0xff0000});
+  const bot = new THREE.Mesh(botGeo, botMat);
+  bot.position.set(x,1,z);
+  scene.add(bot);
+  enemies.push({mesh:bot, speed:0.02});
 }
 
-// Example bot spawns
+// Initial bot spawn
 spawnBot(5,-5);
 spawnBot(-5,-10);
 
-// Map system (placeholder, real .glb maps needed)
+// ====== Map system ======
 function loadMap(name){
-  // remove previous objects except lights
-  for(let i=scene.children.length-1;i>=0;i--){
-    const obj = scene.children[i];
-    if(obj!==light && obj!==camera && obj!==dustParticles && obj!==ground && obj!==controls.getObject()) scene.remove(obj);
-  }
+  // remove previous bots
+  enemies.forEach(e=>scene.remove(e.mesh));
+  enemies.length=0;
   if(name==='dust2'){
     spawnBot(5,-5);
     spawnBot(-5,-10);
@@ -123,23 +118,46 @@ function loadMap(name){
     spawnBot(-3,-6);
   }
 }
-document.getElementById('mapSelect').addEventListener('change', e=>{
-  loadMap(e.target.value);
-});
+document.getElementById('mapSelect').addEventListener('change', e=> loadMap(e.target.value));
 
-// Animation loop
-const clock = new THREE.Clock();
+// ====== Bot AI ======
+function moveBots(){
+  enemies.forEach(bot=>{
+    let dir = new THREE.Vector3();
+    dir.subVectors(controls.getObject().position, bot.mesh.position);
+    if(dir.length()>1){
+      dir.normalize();
+      bot.mesh.position.add(dir.multiplyScalar(bot.speed));
+    }
+    // Atəş açmaq: sadə sphere bullet
+    if(dir.length()<2){
+      // shoot at player
+      if(!bot.cooldown){
+        const bGeo = new THREE.SphereGeometry(0.1,8,8);
+        const bMat = new THREE.MeshBasicMaterial({color:0xff0000});
+        const b = new THREE.Mesh(bGeo,bMat);
+        b.position.copy(bot.mesh.position);
+        b.direction = dir.clone().normalize();
+        b.speed=0.5;
+        scene.add(b);
+        bullets.push(b);
+        bot.cooldown = 50; // cooldown frames
+      } else bot.cooldown--;
+    }
+  });
+}
+
+// ====== Animate Loop ======
 function animate(){
   requestAnimationFrame(animate);
-  const delta = clock.getDelta();
 
-  // Controls movement
+  // Player move
   if(keys['w']) controls.moveForward(playerSpeed);
   if(keys['s']) controls.moveForward(-playerSpeed);
   if(keys['a']) controls.moveRight(-playerSpeed);
   if(keys['d']) controls.moveRight(playerSpeed);
 
-  // Update bullets
+  // Bullets update & collision
   bullets.forEach((b,i)=>{
     b.position.add(b.direction.clone().multiplyScalar(b.speed));
     enemies.forEach((e,j)=>{
@@ -152,17 +170,16 @@ function animate(){
     });
   });
 
-  // Update bot animations
-  enemies.forEach(e=>e.mixer.update(delta));
+  moveBots();
 
-  // Dust movement
+  // Dust rotation
   dustParticles.rotation.y += 0.001;
 
   renderer.render(scene,camera);
 }
 animate();
 
-// Window resize
+// ====== Window Resize ======
 window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
