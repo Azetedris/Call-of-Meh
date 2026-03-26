@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini FPS Shooter - WASD + Botlar</title>
+<title>Mini FPS Demo</title>
 <style>
 body { margin:0; overflow:hidden; background:#111; }
 canvas { display:block; }
@@ -14,9 +14,9 @@ canvas { display:block; }
   border:2px solid yellow; border-radius:50%;
   pointer-events:none;
 }
-#mapSelect {
-  position:absolute; top:10px; left:10px; z-index:10; padding:5px;
-  background:#333; color:#fff;
+#info {
+  position:absolute; top:10px; left:10px; color:white; z-index:10;
+  font-family:sans-serif; font-size:16px;
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -24,76 +24,49 @@ canvas { display:block; }
 </head>
 <body>
 <div id="crosshair"></div>
-<select id="mapSelect">
-  <option value="dust2">Dust2</option>
-  <option value="cs_office">CS Office</option>
-</select>
+<div id="info">Vurduğun bot: -</div>
 
 <script>
-// ===========================
-// SCENE SETUP
-// ===========================
+// Scene
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x222222);
 scene.fog = new THREE.FogExp2(0x222222,0.02);
 
+// Camera & renderer
 const camera = new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
-const renderer = new THREE.WebGLRenderer({antialias:true});
+const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth,window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// ===========================
-// LIGHTING
-// ===========================
+// Light
 const light = new THREE.DirectionalLight(0xffffff,1);
-light.position.set(5,10,5);
+light.position.set(1,2,3);
 scene.add(light);
 
-// ===========================
-// GROUND
-// ===========================
-const groundGeo = new THREE.PlaneGeometry(100,100);
-const groundMat = new THREE.MeshPhongMaterial({color:0x555555});
-const ground = new THREE.Mesh(groundGeo,groundMat);
+// Ground
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshPhongMaterial({color:0x555555}));
 ground.rotation.x = -Math.PI/2;
 scene.add(ground);
 
-// ===========================
-// DUST PARTICLES
-// ===========================
-const dustGeo = new THREE.BufferGeometry();
-const dustCount = 2000;
-const positions = new Float32Array(dustCount*3);
-for(let i=0;i<dustCount*3;i++) positions[i] = Math.random()*50-25;
-dustGeo.setAttribute('position',new THREE.BufferAttribute(positions,3));
-const dustMat = new THREE.PointsMaterial({color:0x888888,size:0.1});
-const dustParticles = new THREE.Points(dustGeo,dustMat);
-scene.add(dustParticles);
-
-// ===========================
-// CONTROLS
-// ===========================
+// Player controls
 const controls = new THREE.PointerLockControls(camera,document.body);
-document.body.addEventListener('click',()=>controls.lock());
+document.body.addEventListener('click', ()=>controls.lock());
 scene.add(controls.getObject());
 
-// ===========================
-// PLAYER MOVEMENT
-// ===========================
+// Player speed
 const keys = {};
-document.addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
-document.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 const playerSpeed = 0.2;
 
-// ===========================
-// BULLETS
-// ===========================
+// Bullets
 const bullets = [];
-document.addEventListener('click',shootBullet);
+document.addEventListener('click', shootBullet);
 function shootBullet(){
-  const geo = new THREE.SphereGeometry(0.1,8,8);
-  const mat = new THREE.MeshBasicMaterial({color:0xffff00});
-  const bullet = new THREE.Mesh(geo,mat);
+  const bullet = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1,8,8),
+    new THREE.MeshBasicMaterial({color:0xffff00})
+  );
   bullet.position.copy(camera.position);
   bullet.direction = new THREE.Vector3();
   camera.getWorldDirection(bullet.direction);
@@ -102,57 +75,20 @@ function shootBullet(){
   bullets.push(bullet);
 }
 
-// ===========================
-// ENEMIES (BOTLAR)
-// ===========================
+// Enemies
 const enemies = [];
 function spawnBot(x,z){
-  const geo = new THREE.BoxGeometry(1,1,1);
-  const mat = new THREE.MeshPhongMaterial({color:0xff0000});
-  const bot = new THREE.Mesh(geo,mat);
+  const bot = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshPhongMaterial({color:0xff0000}));
   bot.position.set(x,0.5,z);
   scene.add(bot);
-  enemies.push({mesh:bot});
+  enemies.push(bot);
 }
-
-// Başlanğıc botlar
 spawnBot(5,-5);
 spawnBot(-5,-10);
+spawnBot(3,-7);
 
-// Simple bot AI
-function moveBots(){
-  enemies.forEach(e=>{
-    const dir = new THREE.Vector3();
-    dir.subVectors(controls.getObject().position,e.mesh.position);
-    if(dir.length()>0.1){
-      dir.normalize();
-      e.mesh.position.add(dir.multiplyScalar(0.01));
-    }
-  });
-}
-
-// ===========================
-// MAP SYSTEM
-// ===========================
-function loadMap(name){
-  // Mövcud botları sil
-  enemies.forEach(e=>scene.remove(e.mesh));
-  enemies.length=0;
-  if(name==='dust2'){
-    spawnBot(5,-5);
-    spawnBot(-5,-10);
-  } else if(name==='cs_office'){
-    spawnBot(3,-3);
-    spawnBot(-3,-6);
-  }
-}
-document.getElementById('mapSelect').addEventListener('change',e=>{
-  loadMap(e.target.value);
-});
-
-// ===========================
-// ANIMATE LOOP
-// ===========================
+// Animate
+const info = document.getElementById('info');
 function animate(){
   requestAnimationFrame(animate);
 
@@ -162,33 +98,35 @@ function animate(){
   if(keys['a']) controls.moveRight(-playerSpeed);
   if(keys['d']) controls.moveRight(playerSpeed);
 
-  // Bullets update
+  // Bullets update & collision
   bullets.forEach((b,i)=>{
     b.position.add(b.direction.clone().multiplyScalar(b.speed));
     enemies.forEach((e,j)=>{
-      if(b.position.distanceTo(e.mesh.position)<0.7){
-        scene.remove(e.mesh);
+      if(b.position.distanceTo(e.position)<0.7){
+        scene.remove(e);
         enemies.splice(j,1);
-        scene.remove(b);
         bullets.splice(i,1);
+        info.innerText = "Vurduğun bot: #" + (j+1);
       }
     });
   });
 
-  // Dust rotation
-  dustParticles.rotation.y += 0.001;
-
-  // Bot AI
-  moveBots();
+  // Simple bot AI
+  enemies.forEach(e=>{
+    const dir = new THREE.Vector3();
+    dir.subVectors(controls.getObject().position,e.position);
+    if(dir.length()>0.1){
+      dir.normalize();
+      e.position.add(dir.multiplyScalar(0.02));
+    }
+  });
 
   renderer.render(scene,camera);
 }
 animate();
 
-// ===========================
-// WINDOW RESIZE
-// ===========================
-window.addEventListener('resize',()=>{
+// Resize
+window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth,window.innerHeight);
