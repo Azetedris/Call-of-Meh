@@ -3,36 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini FPS Demo</title>
+<title>Mini FPS Shooter - Auto Respawn Bots</title>
 <style>
 body { margin:0; overflow:hidden; background:#111; }
 canvas { display:block; }
 #crosshair {
-  position:absolute; left:50%; top:50%;
+  position: absolute; left:50%; top:50%;
   width:10px; height:10px;
   margin-left:-5px; margin-top:-5px;
   border:2px solid yellow; border-radius:50%;
   pointer-events:none;
 }
-#info {
-  position:absolute; top:10px; left:10px; color:white; z-index:10;
-  font-family:sans-serif; font-size:16px;
-}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 <div id="crosshair"></div>
-<div id="info">Vurduğun bot: -</div>
-
 <script>
-// Scene
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x222222);
 scene.fog = new THREE.FogExp2(0x222222,0.02);
 
-// Camera & renderer
 const camera = new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth,window.innerHeight);
@@ -44,90 +37,114 @@ light.position.set(1,2,3);
 scene.add(light);
 
 // Ground
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshPhongMaterial({color:0x555555}));
-ground.rotation.x = -Math.PI/2;
+const groundGeo = new THREE.PlaneGeometry(100,100);
+const groundMat = new THREE.MeshPhongMaterial({color:0x555555});
+const ground = new THREE.Mesh(groundGeo,groundMat);
+ground.rotation.x=-Math.PI/2;
 scene.add(ground);
 
-// Player controls
-const controls = new THREE.PointerLockControls(camera,document.body);
+// Controls
+const controls = new THREE.PointerLockControls(camera, document.body);
 document.body.addEventListener('click', ()=>controls.lock());
 scene.add(controls.getObject());
 
-// Player speed
-const keys = {};
-document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
-document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
-const playerSpeed = 0.2;
+// Player movement
+const keys={};
+document.addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+const playerSpeed=0.2;
 
 // Bullets
-const bullets = [];
-document.addEventListener('click', shootBullet);
+const bullets=[];
+document.addEventListener('click',shootBullet);
 function shootBullet(){
-  const bullet = new THREE.Mesh(
-    new THREE.SphereGeometry(0.1,8,8),
-    new THREE.MeshBasicMaterial({color:0xffff00})
-  );
+  const bulletGeo=new THREE.SphereGeometry(0.1,8,8);
+  const bulletMat=new THREE.MeshBasicMaterial({color:0xffff00});
+  const bullet=new THREE.Mesh(bulletGeo,bulletMat);
   bullet.position.copy(camera.position);
-  bullet.direction = new THREE.Vector3();
+  bullet.direction=new THREE.Vector3();
   camera.getWorldDirection(bullet.direction);
-  bullet.speed = 1;
+  bullet.speed=1;
   scene.add(bullet);
   bullets.push(bullet);
 }
 
-// Enemies
-const enemies = [];
+// Bot system
+const enemies=[];
+const loader=new THREE.GLTFLoader();
 function spawnBot(x,z){
-  const bot = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshPhongMaterial({color:0xff0000}));
-  bot.position.set(x,0.5,z);
-  scene.add(bot);
-  enemies.push(bot);
+  loader.load('bot.glb',function(gltf){
+    const bot=gltf.scene;
+    bot.position.set(x,0,z);
+    scene.add(bot);
+    const mixer=new THREE.AnimationMixer(bot);
+    if(gltf.animations.length>0){
+      const action=mixer.clipAction(gltf.animations[0]);
+      action.play();
+    }
+    enemies.push({mesh:bot,mixer:mixer});
+  });
 }
-spawnBot(5,-5);
-spawnBot(-5,-10);
-spawnBot(3,-7);
 
-// Animate
-const info = document.getElementById('info');
+// Initial spawn
+for(let i=0;i<5;i++){
+  spawnBot(Math.random()*20-10,Math.random()*-20);
+}
+
+// Auto respawn system
+function respawnBots(){
+  while(enemies.length<5){
+    spawnBot(Math.random()*20-10,Math.random()*-20);
+  }
+}
+setInterval(respawnBots,2000); // hər 2 saniyədən bir yoxlayır
+
+// Bot movement simple AI
+function moveEnemies(){
+  enemies.forEach(e=>{
+    const dir=new THREE.Vector3();
+    dir.subVectors(controls.getObject().position,e.mesh.position);
+    if(dir.length()>0.1){
+      dir.normalize();
+      e.mesh.position.add(dir.multiplyScalar(0.01));
+    }
+  });
+}
+
+// Animate loop
+const clock=new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
+  const delta=clock.getDelta();
 
-  // Player movement
   if(keys['w']) controls.moveForward(playerSpeed);
   if(keys['s']) controls.moveForward(-playerSpeed);
   if(keys['a']) controls.moveRight(-playerSpeed);
   if(keys['d']) controls.moveRight(playerSpeed);
 
-  // Bullets update & collision
+  // Update bullets
   bullets.forEach((b,i)=>{
     b.position.add(b.direction.clone().multiplyScalar(b.speed));
     enemies.forEach((e,j)=>{
-      if(b.position.distanceTo(e.position)<0.7){
-        scene.remove(e);
+      if(b.position.distanceTo(e.mesh.position)<0.7){
+        scene.remove(e.mesh);
         enemies.splice(j,1);
+        scene.remove(b);
         bullets.splice(i,1);
-        info.innerText = "Vurduğun bot: #" + (j+1);
       }
     });
   });
 
-  // Simple bot AI
-  enemies.forEach(e=>{
-    const dir = new THREE.Vector3();
-    dir.subVectors(controls.getObject().position,e.position);
-    if(dir.length()>0.1){
-      dir.normalize();
-      e.position.add(dir.multiplyScalar(0.02));
-    }
-  });
-
+  // Bot animations
+  enemies.forEach(e=>e.mixer.update(delta));
+  moveEnemies();
   renderer.render(scene,camera);
 }
 animate();
 
-// Resize
-window.addEventListener('resize', ()=>{
-  camera.aspect = window.innerWidth/window.innerHeight;
+// Window resize
+window.addEventListener('resize',()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth,window.innerHeight);
 });
