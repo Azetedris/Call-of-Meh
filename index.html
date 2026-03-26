@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini FPS Shooter Demo</title>
+<title>Mini FPS Shooter - Dust2/CS Maps</title>
 <style>
 body { margin:0; overflow:hidden; background:#111; }
 canvas { display:block; }
@@ -14,12 +14,20 @@ canvas { display:block; }
   border: 2px solid yellow; border-radius: 50%;
   pointer-events: none;
 }
+#mapSelect {
+  position: absolute; top: 10px; left: 10px; z-index:10; padding:5px;
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 <div id="crosshair"></div>
+<select id="mapSelect">
+  <option value="dust2">Dust2</option>
+  <option value="cs_office">CS Office</option>
+</select>
 
 <script>
 // Scene setup
@@ -38,11 +46,21 @@ light.position.set(1,2,3);
 scene.add(light);
 
 // Ground
-const groundGeo = new THREE.PlaneGeometry(50,50);
+const groundGeo = new THREE.PlaneGeometry(100,100);
 const groundMat = new THREE.MeshPhongMaterial({color:0x555555});
 const ground = new THREE.Mesh(groundGeo,groundMat);
 ground.rotation.x = -Math.PI/2;
 scene.add(ground);
+
+// Dust particles
+const particleGeo = new THREE.BufferGeometry();
+const particlesCount = 2000;
+const positions = new Float32Array(particlesCount*3);
+for(let i=0;i<particlesCount*3;i++) positions[i] = Math.random()*50-25;
+particleGeo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+const particleMat = new THREE.PointsMaterial({color:0x888888, size:0.1});
+const dustParticles = new THREE.Points(particleGeo,particleMat);
+scene.add(dustParticles);
 
 // Controls
 const controls = new THREE.PointerLockControls(camera, document.body);
@@ -70,39 +88,75 @@ function shootBullet(){
   bullets.push(bullet);
 }
 
-// Dummy enemies (red cubes)
+// Enemy bots array
 const enemies = [];
-for(let i=0;i<5;i++){
-  const geo = new THREE.BoxGeometry(1,1,1);
-  const mat = new THREE.MeshPhongMaterial({color:0xff0000});
-  const enemy = new THREE.Mesh(geo,mat);
-  enemy.position.set(Math.random()*20-10,0.5,Math.random()*-20);
-  scene.add(enemy);
-  enemies.push(enemy);
+const loader = new THREE.GLTFLoader();
+function spawnBot(x,z){
+  loader.load('bot.glb', function(gltf){
+    const bot = gltf.scene;
+    bot.position.set(x,0,z);
+    scene.add(bot);
+    enemies.push({mesh:bot,mixer:new THREE.AnimationMixer(bot)});
+    if(gltf.animations.length>0){
+      const action = enemies[enemies.length-1].mixer.clipAction(gltf.animations[0]);
+      action.play();
+    }
+  });
 }
 
-// Animate loop
+// Example bot spawns
+spawnBot(5,-5);
+spawnBot(-5,-10);
+
+// Map system (placeholder, real .glb maps needed)
+function loadMap(name){
+  // remove previous objects except lights
+  for(let i=scene.children.length-1;i>=0;i--){
+    const obj = scene.children[i];
+    if(obj!==light && obj!==camera && obj!==dustParticles && obj!==ground && obj!==controls.getObject()) scene.remove(obj);
+  }
+  if(name==='dust2'){
+    spawnBot(5,-5);
+    spawnBot(-5,-10);
+  } else if(name==='cs_office'){
+    spawnBot(3,-3);
+    spawnBot(-3,-6);
+  }
+}
+document.getElementById('mapSelect').addEventListener('change', e=>{
+  loadMap(e.target.value);
+});
+
+// Animation loop
+const clock = new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
+  const delta = clock.getDelta();
 
-  // Player movement
+  // Controls movement
   if(keys['w']) controls.moveForward(playerSpeed);
   if(keys['s']) controls.moveForward(-playerSpeed);
   if(keys['a']) controls.moveRight(-playerSpeed);
   if(keys['d']) controls.moveRight(playerSpeed);
 
-  // Bullets movement & collision
+  // Update bullets
   bullets.forEach((b,i)=>{
     b.position.add(b.direction.clone().multiplyScalar(b.speed));
     enemies.forEach((e,j)=>{
-      if(b.position.distanceTo(e.position)<0.7){
-        scene.remove(e);
+      if(b.position.distanceTo(e.mesh.position)<0.7){
+        scene.remove(e.mesh);
         enemies.splice(j,1);
         scene.remove(b);
         bullets.splice(i,1);
       }
     });
   });
+
+  // Update bot animations
+  enemies.forEach(e=>e.mixer.update(delta));
+
+  // Dust movement
+  dustParticles.rotation.y += 0.001;
 
   renderer.render(scene,camera);
 }
